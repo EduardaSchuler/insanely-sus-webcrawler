@@ -1,11 +1,11 @@
-#import requests
-from time import sleep
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
+import json
 
 #URL alvo para scrapping
 url_target = 'https://www.imdb.com/pt/chart/top/?ref_=hm_nv_menu'
@@ -21,9 +21,6 @@ navegador = webdriver.Firefox()
 #Carrega o navegador utilizando o selenium
 navegador.get(url_target)
 
-#Espera a pagina ser criada do lado do cliente para pegarmos o código html
-sleep(1)
-
 #Guarda conteudo html da pagina alvo
 html_target = navegador.page_source
 
@@ -31,46 +28,89 @@ html_target = navegador.page_source
 wait = WebDriverWait(navegador, 10)
 
 
-######XPATHS PARA PEGAR INFORMAÇÕES DA PAGINA######
-
-#XPATH da div em que os box de cada filme estao agrupados:
-#/html/body/div[2]/main/div/div[3]/section/div/div[2]/div/ul
 
 
-#XPATH da primeira div do primeiro box:
-#/html/body/div[2]/main/div/div[3]/section/div/div[2]/div/ul/li[1]
-#--> <li class="ipc-metadata-list-summary-item">
+
+#NOTA: O código abaixo é um exemplo de como NÃO se deve fazer, pois ele tenta localizar os elementos antes mesmo de eles estarem presentes na página, o que pode levar a erros de "element not found".
+#ERRADO > filmes_find_element = wait.until(EC.presence_of_all_elements_located(navegador.find_elements((By.XPATH, "//li[.//h3[contains(@class, 'ipc-title__text')]]"))))
+#ERRADO > filmes_find_element_no_wait = navegador.find_elements(By.XPATH, "//li[.//h3[contains(@class, 'ipc-title__text')]]")
 
 
-#XPATH do titulo do primeiro filme:
-#absoluto:/html/body/div[2]/main/div/div[3]/section/div/div[2]/div/ul/li[1]/div/div/div/div/div[2]/ul/div/a 
-#<a href="/pt/title/tt0111161/?ref_=chttp_t_1" class="ipc-title-link-wrapper" tabindex="0">
-#--> <h3 class="ipc-title__text">Um Sonho de Liberdade</h3>
-#</a>
 
 
-#XPATH do numero de posicao do primeiro filme:
-#/html/body/div[2]/main/div/div[3]/section/div/div[2]/div/ul/li[1]/div/div/div/div/div[2]/div[1]/div
-#conteudo: <div class="ipc-signpost__text" role="presentation">#1</div>
+#### Definição da função para fechar o pop-up de informações ####
+#### Tenta utilizar a tag aria-label, caso falhe, tenta clicar na área fora do pop-up (overlay) para fechá-lo. ####
+
+def close_promptable():
+    try:
+        wait.until(EC.visibility_of_element_located((By.XPATH, "//div[contains(@class, 'ipc-promptable-base__content')]")))
+        print("Pop-up de informações aberto com sucesso.") 
+    except TimeoutException:
+        print("Erro: não foi possível abrir o pop-up de informações.")
+
+    #DEPRECATED > Estrategia 1: botão com data-testid específico
+    #Não vai funcionar pois a tag @data-testid não pertence ao botão de fechar, mas sim à div pai do pop-up(duhh).
+    '''
+    try:
+        # Estrategia 1: botão com data-testid específico
+        close_button = wait.until(
+            EC.element_to_be_clickable(
+                (By.XPATH, ".//button[@data-testid='title-summary-prompt-close-button']")
+            )
+        )
+        close_button.click()
+        print("Botão fechado com data-testid.")
+        return
+    except TimeoutException:
+        pass  # Continua para a próxima tentativa
+    '''
+    try:
+        #Botão com tag aria-label="Fechar" ou "Close"
+        close_btn = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//button[@aria-label='Fechar prompt' or @aria-label='Close prompt']"))
+        )
+        close_btn.click()
+        print("Popup fechado com aria-label.")
+        return
+    except TimeoutException:
+        pass  # Continua para a próxima tentativa
+    
+    try:
+        # Estratégia 4: clicar no fundo escuro (overlay) para fechar
+        overlay = wait.until(EC.element_to_be_clickable((By.XPATH, "//div[@role='presentation' and contains(@class, 'ipc-promptable-base__backdrop')]")))
+        overlay.click()
+        print("Popup fechado clicando no overlay.")
+    except TimeoutException:
+        print("Erro: não foi possível fechar o pop-up.")
 
 
-#XPATH do botao de mais informações sobre o filme:
-#/html/body/div[2]/main/div/div[3]/section/div/div[2]/div/ul/li[1]/div/div/div/div/div[3]/button
-#conteudo: <button data-testid="title-summary-prompt-button-info-icon" class="ipc-icon-button li-info-icon ipc-icon-button--base ipc-icon-button--onAccent2" title="Veja mais informações sobre Um Sonho de Liberdade" tabindex="0" aria-label="Veja mais informações sobre Um Sonho de Liberdade" aria-disabled="false"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" class="ipc-icon ipc-icon--info" viewBox="0 0 24 24" fill="currentColor" role="presentation"><path fill="none" d="M0 0h24v24H0V0z"></path><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path></svg></button>
 
 
-#clicando no titulo do primeiro filme para acessar sua pagina
-#sem wait/EC
-#button_info = navegador.find_element(By.XPATH, '//*[@id="__next"]/main/div/div[3]/section/div/div[2]/div/ul/li[1]/div/div/div/div/div[2]/ul/div/a')
-#com wait/EC
-button_info = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="__next"]/main/div/div[3]/section/div/div[2]/div/ul/li[1]/div/div/div/div/div[2]/ul/div/a')))
-button_info.click()
+##### Iniciando o processo de scrapping #####
 
-#pegando lista de filmes
-listaDeFilmes_info = wait.until(EC.presence_of_element_located((By.XPATH, '//ul, //*[@id="__next"]#')))
+movie_list = wait.until(
+    EC.presence_of_all_elements_located(
+        (By.XPATH, '//div[@data-testid="chart-layout-main-column"]//li[contains(@class,"ipc-metadata-list-summary-item")]')
+    )
+)
+print(f"Total de filmes encontrados: {len(movie_list)}")
 
-uls = wait.until(EC.presence_of_elements_located((By.XPATH, "//ul")))
-print(len(uls))
+for idx, movie in enumerate(movie_list):
+
+    #Centraliza o filme na tela para garantir que o botão de informações esteja visível
+    navegador.execute_script("arguments[0].scrollIntoView({block: 'center'});", movie)
+
+    #Localiza o botão de informações usando um XPath relativo ao elemento do filme
+    info_button = movie.find_element(By.XPATH, './/button[@data-testid="title-summary-prompt-button-info-icon"]')
+    print(f"\nFilme atual: {movie.find_element(By.XPATH, './/h3[contains(@class, "ipc-title__text")]').text}")
+    info_button.click()
+    #
+    #tratamento das funcoes
+    #
+
+    close_promptable()
+
+print(f"Filmes na movie_list: {len(movie_list)}")
 
 
 '''
